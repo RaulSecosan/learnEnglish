@@ -1,0 +1,253 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,300..700;1,7..72,300..700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* Warm paper-like backgrounds */
+    --background: 40 33% 98%;
+    --foreground: 30 10% 15%;
+
+    --card: 40 30% 96%;
+    --card-foreground: 30 10% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 30 10% 15%;
+
+    /* Warm amber accent for learning elements */
+    --primary: 25 95% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Soft sage secondary */
+    --secondary: 150 20% 92%;
+    --secondary-foreground: 150 25% 25%;
+
+    --muted: 40 20% 94%;
+    --muted-foreground: 30 10% 45%;
+
+    /* Teal accent for vocabulary/interactive */
+    --accent: 175 60% 40%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 40 20% 88%;
+    --input: 40 20% 88%;
+    --ring: 25 95% 53%;
+
+    --radius: 0.75rem;
+
+    /* Reader-specific tokens */
+    --reader-bg: 45 40% 97%;
+    --reader-text: 30 15% 20%;
+    --reader-highlight: 50 100% 85%;
+    --reader-selection: 175 60% 85%;
+
+    /* Vocabulary card gradient */
+    --vocab-gradient-start: 25 95% 53%;
+    --vocab-gradient-end: 35 100% 60%;
+
+    /* Success/progress colors */
+    --success: 150 60% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --sidebar-background: 40 30% 96%;
+    --sidebar-foreground: 30 10% 25%;
+    --sidebar-primary: 25 95% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 175 60% 40%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 40 20% 88%;
+    --sidebar-ring: 25 95% 53%;
+  }
+
+  .dark {
+    /* Warm dark reading mode */
+    --background: 30 15% 10%;
+    --foreground: 40 20% 90%;
+
+    --card: 30 12% 14%;
+    --card-foreground: 40 20% 90%;
+
+    --popover: 30 12% 12%;
+    --popover-foreground: 40 20% 90%;
+
+    --primary: 30 90% 55%;
+    --primary-foreground: 30 15% 10%;
+
+    --secondary: 30 10% 20%;
+    --secondary-foreground: 40 20% 85%;
+
+    --muted: 30 10% 18%;
+    --muted-foreground: 40 15% 60%;
+
+    --accent: 175 50% 50%;
+    --accent-foreground: 30 15% 10%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 30 10% 22%;
+    --input: 30 10% 22%;
+    --ring: 30 90% 55%;
+
+    /* Reader dark mode */
+    --reader-bg: 30 15% 8%;
+    --reader-text: 40 15% 85%;
+    --reader-highlight: 35 80% 25%;
+    --reader-selection: 175 40% 25%;
+
+    --sidebar-background: 30 12% 12%;
+    --sidebar-foreground: 40 20% 85%;
+    --sidebar-primary: 30 90% 55%;
+    --sidebar-primary-foreground: 30 15% 10%;
+    --sidebar-accent: 175 50% 50%;
+    --sidebar-accent-foreground: 30 15% 10%;
+    --sidebar-border: 30 10% 22%;
+    --sidebar-ring: 30 90% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  /* Reading font for book content */
+  .font-reading {
+    font-family: 'Literata', Georgia, serif;
+  }
+}
+
+@layer components {
+  /* Vocabulary card gradient border */
+  .vocab-card-gradient {
+    background: linear-gradient(135deg, hsl(var(--vocab-gradient-start)), hsl(var(--vocab-gradient-end)));
+  }
+
+  /* Interactive word highlight */
+  .word-interactive {
+    @apply cursor-pointer transition-all duration-200;
+    border-radius: 2px;
+  }
+
+  .word-interactive:hover {
+    background-color: hsl(var(--reader-selection));
+  }
+
+  .word-saved {
+    background-color: hsl(var(--reader-highlight));
+    border-bottom: 2px solid hsl(var(--primary));
+  }
+
+  /* Smooth page transitions */
+  .page-transition {
+    @apply transition-all duration-300 ease-out;
+  }
+
+  /* Reading progress bar */
+  .reading-progress {
+    background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--accent)));
+  }
+
+  /* Flashcard flip animation */
+  .flashcard {
+    perspective: 1000px;
+  }
+
+  .flashcard-inner {
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+  }
+
+  .flashcard.flipped .flashcard-inner {
+    transform: rotateY(180deg);
+  }
+
+  .flashcard-front,
+  .flashcard-back {
+    backface-visibility: hidden;
+  }
+
+  .flashcard-back {
+    transform: rotateY(180deg);
+  }
+
+  /* Glass effect for popovers */
+  .glass {
+    @apply backdrop-blur-lg;
+    background: hsl(var(--background) / 0.85);
+  }
+
+  /* Animated gradient background */
+  .gradient-animated {
+    background: linear-gradient(-45deg, hsl(25 95% 53%), hsl(35 100% 60%), hsl(175 60% 40%), hsl(150 60% 45%));
+    background-size: 400% 400%;
+    animation: gradient-shift 15s ease infinite;
+  }
+
+  @keyframes gradient-shift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  /* Floating animation for hero elements */
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  /* Pulse glow effect */
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 20px hsl(var(--primary) / 0.3); }
+    50% { box-shadow: 0 0 40px hsl(var(--primary) / 0.5); }
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Custom scrollbar for vocabulary list */
+  .scrollbar-styled {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  .scrollbar-styled::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-styled::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-styled::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 3px;
+  }
+}
