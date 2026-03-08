@@ -14,8 +14,7 @@ import { useApp } from "@/contexts/AppContext";
 import ePub from "epubjs";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker?url";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { storage } from "@/lib/firebase";
+import { uploadBookContentToGithub } from "@/lib/githubStorage";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 const PAGE_BREAK_MARKER = "\n\n<<<PAGE_BREAK>>>\n\n";
@@ -73,6 +72,62 @@ interface PdfMetadataShape {
 
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+}
+
+function getImportErrorDetails(err: unknown) {
+  const message = err instanceof Error ? err.message : "";
+
+  if (message === "github-storage-missing-config") {
+    return {
+      title: "Lipsește configurarea GitHub",
+      description:
+        "Setează VITE_GITHUB_OWNER, VITE_GITHUB_REPO și VITE_GITHUB_TOKEN în .env.local, apoi repornește aplicația.",
+    };
+  }
+
+  if (message.startsWith("github-upload-failed:")) {
+    const [, status, apiMessage = ""] = message.split(":");
+    if (status === "401") {
+      return {
+        title: "Token GitHub invalid",
+        description:
+          "Token-ul nu este valid sau a expirat. Generează unul nou și repornește aplicația.",
+      };
+    }
+    if (status === "403") {
+      return {
+        title: "Fără permisiuni pe repo",
+        description:
+          "Token-ul nu are drepturi de scriere pentru conținut (Contents: write) sau repo-ul nu este accesibil.",
+      };
+    }
+    if (status === "404") {
+      return {
+        title: "Repo GitHub negăsit",
+        description:
+          "Verifică VITE_GITHUB_OWNER și VITE_GITHUB_REPO. Repo-ul trebuie să existe și token-ul să aibă acces.",
+      };
+    }
+
+    return {
+      title: "Upload GitHub eșuat",
+      description: `GitHub API a răspuns cu status ${status}. ${apiMessage}`,
+    };
+  }
+
+  if (message === "empty-content") {
+    return {
+      title: "Conținut gol",
+      description:
+        "Fișierul a fost citit, dar nu s-a extras text. Încearcă un alt EPUB/PDF.",
+    };
+  }
+
+  return {
+    title: "Nu am putut importa conținutul",
+    description:
+      "Fișierul nu a putut fi procesat. Te rugăm să încerci un alt EPUB sau PDF.",
+  };
 }
 
 export function ImportBookButton() {
@@ -321,12 +376,7 @@ export function ImportBookButton() {
     if (!userId) {
       throw new Error("missing-user");
     }
-    const storagePath = `users/${userId}/books/${bookId}/content.txt`;
-    const contentRef = ref(storage, storagePath);
-    const blob = new Blob([content], { type: "text/plain" });
-    await uploadBytes(contentRef, blob);
-    const contentUrl = await getDownloadURL(contentRef);
-    return { contentUrl, contentPath: storagePath };
+    return uploadBookContentToGithub(userId, bookId, content);
   };
 
   const handleFile = async (file: File) => {
@@ -361,7 +411,7 @@ export function ImportBookButton() {
         }
 
         const bookId = generateId();
-        const { contentUrl, contentPath } = await uploadBookContent(
+        const { contentUrl, contentPath, contentSha } = await uploadBookContent(
           bookId,
           content,
         );
@@ -382,14 +432,15 @@ export function ImportBookButton() {
           addedAt: new Date(),
           contentUrl,
           contentPath,
+          contentSha,
         };
 
         addBook(newBook);
       } catch (err) {
+        const details = getImportErrorDetails(err);
         toast({
-          title: "Nu am putut importa conținutul",
-          description:
-            "Fișierul nu a putut fi procesat. Te rugăm să încerci un alt EPUB sau PDF.",
+          title: details.title,
+          description: details.description,
           variant: "destructive",
         });
         setIsImporting(false);

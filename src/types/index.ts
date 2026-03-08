@@ -13,6 +13,7 @@ export interface Book {
   content?: string;
   contentUrl?: string;
   contentPath?: string;
+  contentSha?: string;
 }
 
 export interface VocabularyItem {

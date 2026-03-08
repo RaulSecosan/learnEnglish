@@ -8,7 +8,6 @@ import {
   Trash2,
 } from 'lucide-react';
 import { deleteDoc, doc } from 'firebase/firestore';
-import { deleteObject, getBlob, ref } from 'firebase/storage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -17,7 +16,8 @@ import { InteractiveText } from '@/components/reader/InteractiveText';
 import { useApp } from '@/contexts/AppContext';
 import { Layout } from '@/components/layout/Layout';
 import { useToast } from '@/hooks/use-toast';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
+import { deleteBookContentFromGithub } from '@/lib/githubStorage';
 
 const PAGE_BREAK_MARKER = '<<<PAGE_BREAK>>>';
 const READER_HORIZONTAL_PADDING = 96;
@@ -239,20 +239,14 @@ export default function Reader() {
 
     const loadContent = async () => {
       if (!book || book.content?.trim()) return;
-      if (!book.contentUrl && !book.contentPath) return;
+      if (!book.contentUrl) return;
 
       try {
-        let text = '';
-
-        if (book.contentPath) {
-          const contentRef = ref(storage, book.contentPath);
-          const blob = await getBlob(contentRef);
-          text = await blob.text();
-        } else if (book.contentUrl) {
-          const contentRef = ref(storage, book.contentUrl);
-          const blob = await getBlob(contentRef);
-          text = await blob.text();
+        const response = await fetch(book.contentUrl);
+        if (!response.ok) {
+          throw new Error('book-content-fetch-failed');
         }
+        const text = await response.text();
 
         if (isMounted) {
           setRemoteContent(text);
@@ -282,13 +276,11 @@ export default function Reader() {
 
     try {
       try {
-        if (book.contentPath) {
-          await deleteObject(ref(storage, book.contentPath));
-        } else if (book.contentUrl) {
-          await deleteObject(ref(storage, book.contentUrl));
+        if (book.contentPath && book.contentSha) {
+          await deleteBookContentFromGithub(book.contentPath, book.contentSha);
         }
       } catch {
-        // Continue even if storage file is missing.
+        // Continue even if GitHub file is missing or delete is not configured.
       }
 
       await deleteDoc(doc(db, 'users', userId, 'books', book.id));

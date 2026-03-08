@@ -4,6 +4,23 @@
 
 **URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
 
+## GitHub storage setup (instead of Firebase Storage)
+
+Book content upload now uses the GitHub Contents API. Create a `.env.local` file:
+
+```sh
+VITE_GITHUB_OWNER=RaulSecosan
+VITE_GITHUB_REPO=learnEnglish
+VITE_GITHUB_BRANCH=main
+VITE_GITHUB_TOKEN=ghp_your_token_here
+```
+
+Notes:
+
+- Repository should be public if you want direct reading via CDN URL.
+- Token needs `repo` permissions for creating/deleting files.
+- This is a client-side app, so token is exposed in browser; use a dedicated low-privilege token only for this repo.
+
 ## How can I edit this code?
 
 There are several ways of editing your application.
