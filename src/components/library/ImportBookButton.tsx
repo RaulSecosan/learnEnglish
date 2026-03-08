@@ -18,6 +18,58 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "@/lib/firebase";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+const PAGE_BREAK_MARKER = "\n\n<<<PAGE_BREAK>>>\n\n";
+
+interface EpubMetadata {
+  title?: string;
+  titles?: string[];
+}
+
+interface EpubPackage {
+  metadata?: EpubMetadata;
+}
+
+interface EpubSection {
+  href?: string;
+  url?: string;
+  canonical?: string;
+  load?: (loader: (...args: unknown[]) => unknown) => Promise<Document>;
+  render?: (loader: (...args: unknown[]) => unknown) => Promise<string>;
+  unload?: () => void;
+}
+
+interface EpubTocItem {
+  href?: string;
+  subitems?: EpubTocItem[];
+}
+
+interface EpubBookShape {
+  ready?: Promise<unknown>;
+  load?: (...args: unknown[]) => unknown;
+  destroy?: () => void;
+  package?: EpubPackage;
+  navigation?: {
+    toc?: EpubTocItem[];
+  };
+  spine?: {
+    spineItems?: EpubSection[];
+    items?: EpubSection[];
+  };
+}
+
+interface PdfTextItem {
+  str?: string;
+  transform?: number[];
+  width?: number;
+}
+
+interface PdfMetadataInfo {
+  Title?: string;
+}
+
+interface PdfMetadataShape {
+  info?: PdfMetadataInfo;
+}
 
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
@@ -49,33 +101,126 @@ export function ImportBookButton() {
 
   const extractEpubText = async (file: File) => {
     const arrayBuffer = await file.arrayBuffer();
-    const book = ePub(arrayBuffer);
-    await (book as any).ready;
+    const rawBook = ePub(arrayBuffer) as unknown;
+    const book = rawBook as EpubBookShape;
+    await book.ready;
 
-    const spineItems =
-      (book as any).spine?.spineItems ?? (book as any).spine?.items ?? [];
-    const chunks: string[] = [];
+    const normalizeText = (text: string) =>
+      text.replace(/\s+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    const loadResource =
+      typeof book.load === "function" ? book.load.bind(book) : undefined;
 
-    for (const item of spineItems) {
+    const spineItems = book.spine?.spineItems ?? book.spine?.items ?? [];
+    const sectionChunksBySpineIndex: string[] = new Array(spineItems.length).fill("");
+
+    const normalizeHref = (value: string) => {
+      const withoutHash = value.split("#")[0] ?? "";
+      const withoutQuery = withoutHash.split("?")[0] ?? "";
+      const normalizedSlashes = withoutQuery.replace(/\\/g, "/");
+      return decodeURIComponent(normalizedSlashes).trim().toLowerCase();
+    };
+
+    for (let sectionIndex = 0; sectionIndex < spineItems.length; sectionIndex += 1) {
+      const item = spineItems[sectionIndex];
+      let sectionText = "";
+
       try {
-        const doc = await item.load((book as any).load.bind(book));
-        const text = doc?.body?.textContent ?? "";
-        if (text.trim()) {
-          chunks.push(text.trim());
+        if (loadResource && typeof item.load === "function") {
+          const doc = await item.load(loadResource);
+          sectionText = doc?.body?.textContent ?? "";
         }
-        item.unload();
       } catch {
-        // Ignore individual spine errors; continue with other sections.
+        // Fallback below for EPUBs where section load fails.
+      }
+
+      if (!sectionText.trim()) {
+        try {
+          if (loadResource && typeof item.render === "function") {
+            const html = await item.render(loadResource);
+            if (html.trim()) {
+              const parsed = new DOMParser().parseFromString(html, "text/html");
+              sectionText = parsed.body?.textContent ?? "";
+            }
+          }
+        } catch {
+          // Ignore individual section failures; continue with other sections.
+        }
+      }
+
+      const cleaned = normalizeText(sectionText);
+      if (cleaned) {
+        sectionChunksBySpineIndex[sectionIndex] = cleaned;
+      }
+
+      item.unload?.();
+    }
+
+    const hrefToSpineIndex = new Map<string, number>();
+    spineItems.forEach((item, index) => {
+      const candidates = [item.href, item.url, item.canonical]
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .map(normalizeHref);
+      for (const candidate of candidates) {
+        if (!hrefToSpineIndex.has(candidate)) {
+          hrefToSpineIndex.set(candidate, index);
+        }
+      }
+    });
+
+    const flattenTocHrefs = (items: EpubTocItem[]): string[] => {
+      const hrefs: string[] = [];
+      for (const item of items) {
+        if (typeof item.href === "string" && item.href.trim()) {
+          hrefs.push(normalizeHref(item.href));
+        }
+        if (Array.isArray(item.subitems) && item.subitems.length > 0) {
+          hrefs.push(...flattenTocHrefs(item.subitems));
+        }
+      }
+      return hrefs;
+    };
+
+    const tocHrefs = flattenTocHrefs(book.navigation?.toc ?? []);
+    const chapterStarts = tocHrefs
+      .map((href) => hrefToSpineIndex.get(href))
+      .filter((index): index is number => typeof index === "number")
+      .filter((index, pos, arr) => arr.indexOf(index) === pos)
+      .sort((a, b) => a - b);
+
+    const chapterChunks: string[] = [];
+    if (chapterStarts.length > 0 && sectionChunksBySpineIndex.length > 0) {
+      const boundaries = [0, ...chapterStarts]
+        .filter((index, pos, arr) => arr.indexOf(index) === pos)
+        .sort((a, b) => a - b);
+      boundaries.push(sectionChunksBySpineIndex.length);
+
+      for (let i = 0; i < boundaries.length - 1; i += 1) {
+        const start = boundaries[i];
+        const endExclusive = boundaries[i + 1];
+        const chapterText = sectionChunksBySpineIndex
+          .slice(start, endExclusive)
+          .filter(Boolean)
+          .join("\n\n")
+          .trim();
+        if (chapterText) {
+          chapterChunks.push(chapterText);
+        }
       }
     }
 
-    const metadataTitle =
-      (book as any).package?.metadata?.title ||
-      (book as any).package?.metadata?.titles?.[0];
+    const baseChunks =
+      chapterChunks.length > 0
+        ? chapterChunks
+        : sectionChunksBySpineIndex.filter(Boolean);
+    const finalChunks = baseChunks;
+
+    const metadataTitle = book.package?.metadata?.title || book.package?.metadata?.titles?.[0];
+    book.destroy?.();
 
     return {
-      content: chunks.join("\n\n"),
+      content: finalChunks.join(PAGE_BREAK_MARKER),
       title: typeof metadataTitle === "string" ? metadataTitle : undefined,
+      totalPages: Math.max(finalChunks.length, 1),
     };
   };
 
@@ -83,25 +228,81 @@ export function ImportBookButton() {
     const arrayBuffer = await file.arrayBuffer();
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
     const pdf = await loadingTask.promise;
-    const chunks: string[] = [];
+    const pageChunks: string[] = [];
+
+    const extractPageText = (items: PdfTextItem[]) => {
+      const positionedItems = items
+        .filter((item) => "str" in item && typeof item.str === "string")
+        .map((item) => ({
+          str: item.str as string,
+          x: Array.isArray(item.transform) ? Number(item.transform[4] ?? 0) : 0,
+          y: Array.isArray(item.transform) ? Number(item.transform[5] ?? 0) : 0,
+          width: typeof item.width === "number" ? item.width : 0,
+        }))
+        .filter((item) => item.str.trim().length > 0);
+
+      positionedItems.sort((a, b) => {
+        const yDiff = b.y - a.y;
+        if (Math.abs(yDiff) > 2) {
+          return yDiff;
+        }
+        return a.x - b.x;
+      });
+
+      type Line = { y: number; items: typeof positionedItems };
+      const lines: Line[] = [];
+
+      for (const item of positionedItems) {
+        const lastLine = lines[lines.length - 1];
+        if (!lastLine || Math.abs(lastLine.y - item.y) > 2) {
+          lines.push({ y: item.y, items: [item] });
+        } else {
+          lastLine.items.push(item);
+        }
+      }
+
+      return lines
+        .map((line) => {
+          const sortedLineItems = [...line.items].sort((a, b) => a.x - b.x);
+          let lineText = "";
+
+          for (let i = 0; i < sortedLineItems.length; i += 1) {
+            const current = sortedLineItems[i];
+            const prev = sortedLineItems[i - 1];
+            if (!current.str.trim()) {
+              continue;
+            }
+
+            if (!prev) {
+              lineText = current.str.trim();
+              continue;
+            }
+
+            const prevEndX = prev.x + prev.width;
+            const gap = current.x - prevEndX;
+            const separator = gap > 1.5 ? " " : "";
+            lineText += `${separator}${current.str.trim()}`;
+          }
+
+          return lineText.trim();
+        })
+        .filter(Boolean)
+        .join("\n");
+    };
 
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
       const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item) => ("str" in item ? item.str : ""))
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim();
+      const pageText = extractPageText(textContent.items as PdfTextItem[]);
       if (pageText) {
-        chunks.push(pageText);
+        pageChunks.push(pageText);
       }
     }
 
     let metadataTitle: string | undefined;
     try {
-      const metadata = await pdf.getMetadata();
-      const title = (metadata as any)?.info?.Title;
+      const metadata = (await pdf.getMetadata()) as PdfMetadataShape;
+      const title = metadata?.info?.Title;
       if (typeof title === "string" && title.trim()) {
         metadataTitle = title.trim();
       }
@@ -110,8 +311,9 @@ export function ImportBookButton() {
     }
 
     return {
-      content: chunks.join("\n\n"),
+      content: pageChunks.join(PAGE_BREAK_MARKER),
       title: metadataTitle,
+      totalPages: pageChunks.length || pdf.numPages,
     };
   };
 
@@ -123,7 +325,8 @@ export function ImportBookButton() {
     const contentRef = ref(storage, storagePath);
     const blob = new Blob([content], { type: "text/plain" });
     await uploadBytes(contentRef, blob);
-    return getDownloadURL(contentRef);
+    const contentUrl = await getDownloadURL(contentRef);
+    return { contentUrl, contentPath: storagePath };
   };
 
   const handleFile = async (file: File) => {
@@ -148,7 +351,7 @@ export function ImportBookButton() {
 
         setIsImporting(true);
 
-        const { content, title: extractedTitle } =
+        const { content, title: extractedTitle, totalPages } =
           extension === "epub"
             ? await extractEpubText(file)
             : await extractPdfText(file);
@@ -158,22 +361,27 @@ export function ImportBookButton() {
         }
 
         const bookId = generateId();
-        const contentUrl = await uploadBookContent(bookId, content);
+        const { contentUrl, contentPath } = await uploadBookContent(
+          bookId,
+          content,
+        );
 
         // create a minimal Book metadata object and add to app state
         const fallbackTitle = file.name.replace(/\.[^/.]+$/, "");
         const newBook = {
           id: bookId,
           title: extractedTitle?.trim() || fallbackTitle,
+          format: extension === "epub" ? "epub" : "pdf",
           author: "",
           coverUrl: "",
           language: "",
           progress: 0,
-          totalPages: 0,
-          currentPage: 0,
+          totalPages: typeof totalPages === "number" ? totalPages : 1,
+          currentPage: 1,
           lastRead: new Date(),
           addedAt: new Date(),
           contentUrl,
+          contentPath,
         };
 
         addBook(newBook);

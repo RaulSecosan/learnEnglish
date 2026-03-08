@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, type CSSProperties } from 'react';
 import { Volume2, BookmarkPlus, Check, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -25,12 +25,8 @@ interface TranslationPopupProps {
 const DEFAULT_ENDPOINT = 'https://translate.cutie.dating/translate';
 
 const buildEndpoints = () => {
-  const configured = (import.meta as any)?.env?.VITE_TRANSLATE_ENDPOINT as
-    | string
-    | undefined;
-  const apiKey = (import.meta as any)?.env?.VITE_TRANSLATE_API_KEY as
-    | string
-    | undefined;
+  const configured = import.meta.env.VITE_TRANSLATE_ENDPOINT as string | undefined;
+  const apiKey = import.meta.env.VITE_TRANSLATE_API_KEY as string | undefined;
 
   const endpoints = [configured || DEFAULT_ENDPOINT];
   if (apiKey) {
@@ -91,6 +87,16 @@ export function TranslationPopup({ data, originalSentence, onClose, bookId, book
   const [wordTranslation, setWordTranslation] = useState<string>('');
   const [sentenceTranslation, setSentenceTranslation] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+
+  useEffect(() => {
+    const loadVoices = () => setVoices(window.speechSynthesis.getVoices());
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
 
   const isAlreadySaved = vocabulary.some(
     (item) => item.word.toLowerCase() === data.word.toLowerCase() && item.bookId === bookId
@@ -119,14 +125,33 @@ export function TranslationPopup({ data, originalSentence, onClose, bookId, book
     };
 
     loadTranslations();
-  }, [data.word, originalSentence, targetLanguage]);
+  }, [data.word, originalSentence, sourceLanguage, targetLanguage]);
 
   const handleSpeak = (text: string, langCode: string) => {
+    if (!text.trim()) return;
+
     const speechCode = getSpeechCode(langCode);
+    const languagePrefix = speechCode.split('-')[0].toLowerCase();
+    const lowerSpeechCode = speechCode.toLowerCase();
+    const voiceCandidates = voices.filter((voice) =>
+      voice.lang.toLowerCase().startsWith(languagePrefix),
+    );
+    const preferredVoice =
+      voiceCandidates.find((voice) => voice.lang.toLowerCase() === lowerSpeechCode) ||
+      (langCode === 'en'
+        ? voiceCandidates.find((voice) => voice.lang.toLowerCase().startsWith('en-us')) ||
+          voiceCandidates.find((voice) => voice.lang.toLowerCase().startsWith('en-gb'))
+        : null) ||
+      voiceCandidates[0] ||
+      null;
+
+    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = speechCode;
-    utterance.rate = 0.8;
-    speechSynthesis.speak(utterance);
+    utterance.lang = preferredVoice?.lang || speechCode;
+    utterance.voice = preferredVoice;
+    utterance.rate = langCode === 'en' ? 0.92 : 0.88;
+    utterance.pitch = 1;
+    window.speechSynthesis.speak(utterance);
   };
 
   const handleSave = () => {
@@ -157,16 +182,35 @@ export function TranslationPopup({ data, originalSentence, onClose, bookId, book
   };
 
   const targetLang = getLanguageByCode(targetLanguage);
+  const isMobile = window.innerWidth < 640;
+  const popupLayout = useMemo(() => {
+    if (isMobile) {
+      return {
+        className: 'bottom-2 left-2 right-2 top-auto w-auto',
+        style: undefined as CSSProperties | undefined,
+      };
+    }
+
+    const margin = 12;
+    const popupWidth = 384;
+    const popupHeightEstimate = 460;
+    const maxLeft = window.innerWidth - popupWidth - margin;
+    const maxTop = window.innerHeight - popupHeightEstimate - margin;
+    const left = Math.max(margin, Math.min(data.position.x, maxLeft));
+    const top = Math.max(margin, Math.min(data.position.y + 10, maxTop));
+
+    return {
+      className: 'w-96',
+      style: { left, top } as CSSProperties,
+    };
+  }, [data.position.x, data.position.y, isMobile]);
 
   return (
     <Card
-      className="animate-scale-in glass fixed z-50 w-96 overflow-hidden border-none shadow-2xl"
-      style={{
-        left: Math.min(data.position.x, window.innerWidth - 420),
-        top: Math.min(data.position.y + 10, window.innerHeight - 400),
-      }}
+      className={`animate-scale-in glass fixed z-50 max-h-[82vh] overflow-y-auto border-none shadow-2xl ${popupLayout.className}`}
+      style={popupLayout.style}
     >
-      <div className="p-4">
+      <div className="p-3 sm:p-4">
         {/* Header with language selector */}
         <div className="mb-3 flex items-start justify-between">
           <div className="flex-1">
@@ -196,10 +240,10 @@ export function TranslationPopup({ data, originalSentence, onClose, bookId, book
         </div>
 
         {/* Language selector */}
-        <div className="mb-4 flex items-center gap-2">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
           <span className="text-sm text-muted-foreground">Traducere în:</span>
           <Select value={targetLanguage} onValueChange={setTargetLanguage}>
-            <SelectTrigger className="w-[160px] h-8">
+            <SelectTrigger className="h-8 w-full sm:w-[180px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -260,7 +304,7 @@ export function TranslationPopup({ data, originalSentence, onClose, bookId, book
         </div>
 
         {/* Action buttons */}
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Button
             variant="ghost"
             size="sm"

@@ -6,7 +6,7 @@ import React, {
   ReactNode,
 } from "react";
 import { Book, VocabularyItem, ReadingSettings } from "@/types";
-import { auth, db } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import {
   collection,
   doc,
@@ -17,7 +17,6 @@ import {
   updateDoc,
   deleteDoc,
 } from "firebase/firestore";
-import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 
 interface AppContextType {
   books: Book[];
@@ -70,17 +69,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [isDarkMode]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUserId(user.uid);
-        return;
-      }
-      signInAnonymously(auth).catch(() => {
-        setUserId(null);
-      });
-    });
-
-    return () => unsubscribe();
+    setUserId("public");
   }, []);
 
   useEffect(() => {

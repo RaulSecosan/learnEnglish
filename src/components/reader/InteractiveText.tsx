@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { TranslationPopup } from './TranslationPopup';
 import { TranslationPopup as TranslationPopupType } from '@/types';
 import { useApp } from '@/contexts/AppContext';
@@ -41,6 +41,23 @@ export function InteractiveText({ content, bookId, bookTitle }: InteractiveTextP
   const [selectedSentence, setSelectedSentence] = useState<string>('');
   const { vocabulary, readingSettings } = useApp();
 
+  const wordPositions = useMemo(() => {
+    const positions: number[] = [];
+    let offset = 0;
+    const tokens = content.split(/(\s+)/);
+
+    for (const token of tokens) {
+      if (/^\s+$/.test(token)) {
+        offset += token.length;
+        continue;
+      }
+      positions.push(offset);
+      offset += token.length;
+    }
+
+    return positions;
+  }, [content]);
+
   const savedWords = vocabulary
     .filter((item) => item.bookId === bookId)
     .map((item) => item.word.toLowerCase());
@@ -49,9 +66,7 @@ export function InteractiveText({ content, bookId, bookTitle }: InteractiveTextP
     const cleanWord = word.replace(/[.,!?;:"']/g, '');
     if (!cleanWord) return;
 
-    // Calculate approximate position in text to extract sentence
-    const textBeforeClick = content.split(/\s+/).slice(0, wordIndex).join(' ');
-    const wordPosition = textBeforeClick.length;
+    const wordPosition = wordPositions[wordIndex] ?? 0;
     
     // Extract the full sentence
     const fullSentence = extractSentence(content, wordPosition);
@@ -64,7 +79,7 @@ export function InteractiveText({ content, bookId, bookTitle }: InteractiveTextP
       sentenceTranslation: '', // Will be filled by TranslationPopup
       position: { x: e.clientX, y: e.clientY },
     });
-  }, [content]);
+  }, [content, wordPositions]);
 
   const closePopup = useCallback(() => {
     setPopup(null);

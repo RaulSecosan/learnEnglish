@@ -1,6 +1,7 @@
 export interface Book {
   id: string;
   title: string;
+  format?: "epub" | "pdf";
   author: string;
   coverUrl: string;
   language: string;
@@ -11,6 +12,7 @@ export interface Book {
   addedAt: Date;
   content?: string;
   contentUrl?: string;
+  contentPath?: string;
 }
 
 export interface VocabularyItem {

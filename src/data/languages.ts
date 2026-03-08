@@ -1,5 +1,5 @@
 export const supportedLanguages = [
-  { code: 'en', name: 'Engleză', flag: '🇬🇧', speechCode: 'en-GB' },
+  { code: 'en', name: 'Engleză', flag: '🇬🇧', speechCode: 'en-US' },
   { code: 'ro', name: 'Română', flag: '🇷🇴', speechCode: 'ro-RO' },
   { code: 'fr', name: 'Franceză', flag: '🇫🇷', speechCode: 'fr-FR' },
   { code: 'de', name: 'Germană', flag: '🇩🇪', speechCode: 'de-DE' },
