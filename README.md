@@ -21,6 +21,19 @@ Notes:
 - Token needs `repo` permissions for creating/deleting files.
 - This is a client-side app, so token is exposed in browser; use a dedicated low-privilege token only for this repo.
 
+## ChatGPT translation setup (primary translator)
+
+Add these in `.env.local` if you want ChatGPT as default translator:
+
+```sh
+VITE_CHATGPT_API_KEY=sk-...
+VITE_CHATGPT_MODEL=gpt-4o-mini
+# Optional custom endpoint:
+# VITE_CHATGPT_ENDPOINT=https://api.openai.com/v1/chat/completions
+```
+
+If `VITE_CHATGPT_API_KEY` is missing, popup will show ChatGPT as not configured.
+
 ## How can I edit this code?
 
 There are several ways of editing your application.

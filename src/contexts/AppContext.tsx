@@ -57,8 +57,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [isDarkMode, setIsDarkModeState] = useState(false);
   const [currentBook, setCurrentBook] = useState<Book | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [targetLanguage, setTargetLanguage] = useState("en"); // Default: English
-  const [sourceLanguage, setSourceLanguage] = useState("ro"); // Default: Romanian
+  const [targetLanguage, setTargetLanguage] = useState("ro"); // Default: Romanian
+  const [sourceLanguage, setSourceLanguage] = useState("en"); // Default: English
 
   useEffect(() => {
     if (isDarkMode) {

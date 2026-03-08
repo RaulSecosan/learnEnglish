@@ -23,6 +23,12 @@ interface TranslationPopupProps {
 }
 
 const DEFAULT_ENDPOINT = 'https://translate.cutie.dating/translate';
+const CHATGPT_ENDPOINT =
+  (import.meta.env.VITE_CHATGPT_ENDPOINT as string | undefined) ||
+  'https://api.openai.com/v1/chat/completions';
+const CHATGPT_MODEL =
+  (import.meta.env.VITE_CHATGPT_MODEL as string | undefined) || 'gpt-5.2';
+const CHATGPT_API_KEY = import.meta.env.VITE_CHATGPT_API_KEY as string | undefined;
 
 const buildEndpoints = () => {
   const configured = import.meta.env.VITE_TRANSLATE_ENDPOINT as string | undefined;
@@ -36,7 +42,7 @@ const buildEndpoints = () => {
   return { endpoints, apiKey };
 };
 
-const translateText = async (
+const translateTextClassic = async (
   text: string,
   sourceLang: string,
   targetLang: string,
@@ -80,6 +86,173 @@ const translateText = async (
   throw lastError ?? new Error('translation-failed');
 };
 
+const translateTextChatGpt = async (
+  text: string,
+  sourceLang: string,
+  targetLang: string,
+): Promise<string> => {
+  if (!text.trim()) return '';
+  if (!CHATGPT_API_KEY) {
+    throw new Error('chatgpt-missing-config');
+  }
+
+  const source = sourceLang?.trim() || 'auto';
+  const response = await fetch(CHATGPT_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${CHATGPT_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: CHATGPT_MODEL,
+      temperature: 0.1,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a translation engine. Return only the translated text with no explanations.',
+        },
+        {
+          role: 'user',
+          content: `Translate the following text from "${source}" to "${targetLang}":\n\n${text}`,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    let apiMessage = 'unknown-error';
+    try {
+      const errorData = (await response.json()) as {
+        error?: { message?: string; type?: string; code?: string };
+      };
+      apiMessage =
+        errorData.error?.message ||
+        errorData.error?.type ||
+        errorData.error?.code ||
+        apiMessage;
+    } catch {
+      // ignore parse errors
+    }
+    throw new Error(`chatgpt-translation-failed:${response.status}:${apiMessage}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const translated = data.choices?.[0]?.message?.content?.trim();
+  if (!translated) {
+    throw new Error('chatgpt-translation-empty');
+  }
+
+  return translated;
+};
+
+const translateWordAndSentenceChatGpt = async (
+  word: string,
+  sentence: string,
+  sourceLang: string,
+  targetLang: string,
+): Promise<{ wordTranslation: string; sentenceTranslation: string }> => {
+  if (!CHATGPT_API_KEY) {
+    throw new Error('chatgpt-missing-config');
+  }
+
+  const source = sourceLang?.trim() || 'auto';
+  const response = await fetch(CHATGPT_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${CHATGPT_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: CHATGPT_MODEL,
+      temperature: 0.1,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a professional translator. Return exactly two lines: WORD=<translation> and SENTENCE=<translation>. No extra text.',
+        },
+        {
+          role: 'user',
+          content:
+            `Source language: ${source}\nTarget language: ${targetLang}\n` +
+            `Word to translate in context: ${word}\n` +
+            `Sentence context: ${sentence}\n\n` +
+            'Requirements:\n' +
+            '- WORD must be the most common Romanian dictionary form (no article, no inflection).\n' +
+            '- If multiple options are valid, prefer the neutral/common one used in dictionaries.\n' +
+            '- SENTENCE must be a fluent, natural translation in Romanian.\n' +
+            '- Preserve the meaning exactly; do not add explanations.',
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    let apiMessage = 'unknown-error';
+    try {
+      const errorData = (await response.json()) as {
+        error?: { message?: string; type?: string; code?: string };
+      };
+      apiMessage =
+        errorData.error?.message ||
+        errorData.error?.type ||
+        errorData.error?.code ||
+        apiMessage;
+    } catch {
+      // ignore parse errors
+    }
+    throw new Error(`chatgpt-translation-failed:${response.status}:${apiMessage}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = data.choices?.[0]?.message?.content?.trim();
+  if (!content) {
+    throw new Error('chatgpt-translation-empty');
+  }
+
+  const wordMatch = content.match(/WORD=(.*)/i);
+  const sentenceMatch = content.match(/SENTENCE=(.*)/i);
+  const wordTranslation = wordMatch?.[1]?.trim();
+  const sentenceTranslation = sentenceMatch?.[1]?.trim();
+
+  if (!wordTranslation || !sentenceTranslation) {
+    throw new Error('chatgpt-translation-parse-failed');
+  }
+
+  return { wordTranslation, sentenceTranslation };
+};
+
+const getChatGptErrorMessage = (message: string) => {
+  if (message === 'chatgpt-missing-config') {
+    return 'Adaugă VITE_CHATGPT_API_KEY în .env.local.';
+  }
+
+  if (message.startsWith('chatgpt-translation-failed:')) {
+    const [, status = 'unknown', apiMessage = 'unknown-error'] = message.split(':');
+    if (status === '401') {
+      return 'Cheia ChatGPT este invalidă sau expirată (401).';
+    }
+    if (status === '429') {
+      return 'Limită depășită sau fără credit pe OpenAI (429).';
+    }
+    return `OpenAI a răspuns cu ${status}: ${apiMessage}`;
+  }
+
+  if (message === 'chatgpt-translation-empty') {
+    return 'ChatGPT a returnat răspuns gol.';
+  }
+  if (message === 'chatgpt-translation-parse-failed') {
+    return 'Răspuns ChatGPT într-un format neașteptat.';
+  }
+
+  return 'Eroare de rețea/CORS către OpenAI API.';
+};
+
 export function TranslationPopup({ data, originalSentence, onClose, bookId, bookTitle }: TranslationPopupProps) {
   const { addVocabularyItem, vocabulary, targetLanguage, setTargetLanguage, sourceLanguage } = useApp();
   const { toast } = useToast();
@@ -87,6 +260,7 @@ export function TranslationPopup({ data, originalSentence, onClose, bookId, book
   const [wordTranslation, setWordTranslation] = useState<string>('');
   const [sentenceTranslation, setSentenceTranslation] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTranslator, setActiveTranslator] = useState<'chatgpt' | 'classic'>('chatgpt');
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   useEffect(() => {
@@ -102,29 +276,53 @@ export function TranslationPopup({ data, originalSentence, onClose, bookId, book
     (item) => item.word.toLowerCase() === data.word.toLowerCase() && item.bookId === bookId
   );
 
-  // Load translations when popup opens or language changes
-  useEffect(() => {
-    const loadTranslations = async () => {
-      setIsLoading(true);
-      try {
-        const translationSource =
-          sourceLanguage === targetLanguage ? 'auto' : sourceLanguage;
+  const translateWithProvider = async (provider: 'chatgpt' | 'classic') => {
+    setIsLoading(true);
+    setActiveTranslator(provider);
+    try {
+      const translationSource = sourceLanguage === targetLanguage ? 'auto' : sourceLanguage;
+      if (provider === 'chatgpt') {
+        const result = await translateWordAndSentenceChatGpt(
+          data.word,
+          originalSentence,
+          translationSource,
+          targetLanguage,
+        );
+        setWordTranslation(result.wordTranslation);
+        setSentenceTranslation(result.sentenceTranslation);
+      } else {
         const [wordTrans, sentenceTrans] = await Promise.all([
-          translateText(data.word, translationSource, targetLanguage),
-          translateText(originalSentence, translationSource, targetLanguage),
+          translateTextClassic(data.word, translationSource, targetLanguage),
+          translateTextClassic(originalSentence, translationSource, targetLanguage),
         ]);
         setWordTranslation(wordTrans);
         setSentenceTranslation(sentenceTrans);
-      } catch (error) {
-        console.error('Translation error:', error);
+      }
+    } catch (error) {
+      console.error('Translation error:', error);
+      if (provider === 'chatgpt') {
+        const details = getChatGptErrorMessage(
+          error instanceof Error ? error.message : '',
+        );
+        toast({
+          title: 'ChatGPT indisponibil',
+          description: details,
+          variant: 'destructive',
+        });
         setWordTranslation('Nu am putut traduce.');
         setSentenceTranslation('Nu am putut traduce.');
-      } finally {
-        setIsLoading(false);
+      } else {
+        setWordTranslation('Nu am putut traduce.');
+        setSentenceTranslation('Nu am putut traduce.');
       }
-    };
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    loadTranslations();
+  // Default translator: ChatGPT
+  useEffect(() => {
+    void translateWithProvider('chatgpt');
   }, [data.word, originalSentence, sourceLanguage, targetLanguage]);
 
   const handleSpeak = (text: string, langCode: string) => {
@@ -257,6 +455,27 @@ export function TranslationPopup({ data, originalSentence, onClose, bookId, book
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="mb-4 flex gap-2">
+          <Button
+            type="button"
+            variant={activeTranslator === 'chatgpt' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => void translateWithProvider('chatgpt')}
+            disabled={isLoading}
+          >
+            Tradu cu ChatGPT
+          </Button>
+          <Button
+            type="button"
+            variant={activeTranslator === 'classic' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => void translateWithProvider('classic')}
+            disabled={isLoading}
+          >
+            Tradu cu varianta veche
+          </Button>
         </div>
 
         {/* Original sentence and translation */}
